@@ -1,0 +1,46 @@
+variables:
+  - group: devops-dev
+
+pool:
+  vmImage: ubuntu-latest
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - master
+      - main
+  paths:
+    include:
+      - docker/Dockerfile
+      - pipelines/docker_deploy.yml
+      - sql/**/*
+      - scripts/run_sql.sh
+
+resources:
+  pipelines:
+    - pipeline: infra_deploy
+      source: leriksen.terraform
+      trigger:
+        branches:
+          - master
+          - main
+
+stages:
+  - stage: Build
+    displayName: Build and push stage
+    jobs:
+      - job: Build
+        displayName: Build job
+        steps:
+          - task: Docker@2
+            displayName: Build and push an image to container registry
+            inputs:
+              buildContext: $(Build.SourcesDirectory)
+              command: buildAndPush
+              repository: postgres
+              dockerfile: $(Build.SourcesDirectory)/docker/Dockerfile
+              containerRegistry: tf_sc_acr
+              tags: |
+                0.0.1-$(Build.BuildId)
+                latest

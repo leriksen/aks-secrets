@@ -1,0 +1,83 @@
+variables:
+  - group: devops-dev
+  - group: infra
+  - group: pg-dev
+
+pool:
+  vmImage: ubuntu-latest
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - master
+      - main
+  paths:
+    include:
+      - pipelines/pg_helm_deploy.yml
+      - helm/postgres/**/*
+
+resources:
+  pipelines:
+    - pipeline: docker_build
+      source: leriksen.docker
+      trigger:
+        branches:
+          - master
+          - main
+
+stages:
+  - stage: deploy_helm
+    displayName: Deploy Helm
+    jobs:
+      - deployment: helm
+        displayName: Deploy Helm
+        workspace:
+          clean: all
+        environment: $(environment)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: HelmInstaller@1
+
+                - task: HelmDeploy@0
+                  displayName: Helm Package
+                  inputs:
+                    command: package
+                    chartPath: helm/postgres
+                    chartVersion: 0.1.0
+                    destination: $(Build.ArtifactStagingDirectory)
+                    arguments: --app-version $(Build.BuildNumber)
+                    save: false
+
+                - task: PublishPipelineArtifact@1
+                  displayName: Save helm package
+                  inputs:
+                    targetPath: $(Build.ArtifactStagingDirectory)/postgres-0.1.0.tgz
+                    artifact: helm_postgres_package
+                    publishLocation: pipeline
+
+                - task: HelmDeploy@0
+                  displayName: Helm Deploy
+                  inputs:
+                    namespace:                   $(environment)
+                    connectionType:              Kubernetes Service Connection
+                    kubernetesServiceConnection: tf_sc_aks
+                    command:                     upgrade
+                    chartType:                   FilePath
+                    chartPath:                   $(Build.ArtifactStagingDirectory)/postgres-0.1.0.tgz
+                    chartVersion:                0.1.0
+                    releaseName:                 postgres
+                    valueFile:                   helm/postgres/values.yaml
+                    arguments:                   --install --create-namespace --timeout 30s
+                    # var in group is updated with actual host, in the terraform pipeline
+                    overrideValues: pghost="$(pghost)",pguser="$(pguser)",pgpassword="$(pgpassword)",pgdatabase="$(pgdatabase)",initial_migration="$(initial_migration)",migration_direction="$(migration_direction)",personify_read_user="$(personify_read_user)"
+
+#                - bash: |
+#                    kubectl exec postgres-cli -c consumer -n dev -- cat /var/log/1.log
+#
+#                    exit 0
+#                  displayName: Confirm log

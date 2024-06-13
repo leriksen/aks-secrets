@@ -1,0 +1,30 @@
+variables:
+  - group: devops-dev
+  - group: pg-dev
+pool:
+  vmImage: ubuntu-latest
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - master
+      - main
+  paths:
+    include:
+      - pipelines/infra_deploy_dev.yml
+      - terraform/**/*
+      - modules/**/*
+      - scripts/terraform_*.sh
+
+stages:
+  - template: ./templates/plan.yml
+    parameters:
+      tf_creds: credentials.tfrc.json
+      tf_workspace: pg
+
+  - template: ./templates/apply.yml
+    parameters:
+      tf_creds: credentials.tfrc.json
+      tf_workspace: pg
+      environment: $(environment)
